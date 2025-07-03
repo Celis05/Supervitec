@@ -1,0 +1,34 @@
+{
+  "name": "paquete",
+  "version": "1.0.0",
+  "description": "App de uso exclusivo para Supervitec S.A.S",
+  "main": "entrada.js",
+  "scripts": {
+    "test": "test: react-scripts test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Celis05/Supervitec.git"
+  },
+  "keywords": [
+    "backend",
+    "express",
+    "nodejs",
+    "api"
+  ],
+  "author": "Juan Esteban Celis",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/Celis05/Supervitec/issues"
+  },
+  "homepage": "https://github.com/Celis05/Supervitec#readme",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.16.1"
+  }
+}
