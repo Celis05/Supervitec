@@ -8,10 +8,14 @@ const register = async (req, res) => {
 
   const { name, email, password, role, transporte, region } = req.body;
 
+  // 🚫 Bloquear intento de crear usuario con rol admin desde la app
+  if (role === 'admin') {
+    return res.status(403).json({ message: 'No se permite registrar usuarios con rol admin' });
+  }
+
   if (!name || !email || !password || !role || !transporte || !region) {
     return res.status(400).json({ message: 'Todos los campos son obligatorios' });
   }
-
 
   try {
     const userExists = await User.findOne({ email });
@@ -31,7 +35,7 @@ const register = async (req, res) => {
     await newUser.save();
     res.status(201).json({ message: 'Usuario registrado correctamente' });
   } catch (error) {
-    console.error('❌ Error detallado en el registro:', error.message, error.stack);
+    console.error('Error en el registro:', error);
     res.status(500).json({ message: 'Error al registrar el usuario' });
   }
 };
