@@ -8,6 +8,6 @@ const userSchema = new mongoose.Schema({
   transporte: { type: String, enum: ['moto', 'carro'], required: true },
   region: { type: String, enum: ['Risaralda', 'Caldas', 'Quindío'], required: true },
   pushToken: { type: String } // 🆕 Aquí se guarda el token de Expo
-});
+}, {timestamps: true});
 
 module.exports = mongoose.model('User', userSchema);

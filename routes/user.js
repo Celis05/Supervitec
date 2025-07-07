@@ -1,243 +1,152 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Usuarios
+ *   description: Gestión de usuarios (solo admins)
+ */
+
 const express = require('express');
 const router = express.Router();
-const Movimiento = require('../models/movimiento');
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const authMiddleware = require('../middleware/authMiddleware');
 const ExcelJS = require('exceljs');
-const User = require('../models/User');
+const Movimiento = require('../models/movimiento');
 
+// ==================== AUTH ====================
 
 /**
  * @swagger
- * /users/movimientos:
+ * /users/register:
  *   post:
- *     summary: Registrar un nuevo movimiento
- *     tags: [Movimientos]
- *     security:
- *       - bearerAuth: []
+ *     summary: Registrar un nuevo usuario (solo admin o para desarrollo inicial)
+ *     tags: [Usuarios]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [name, email, password, role, region]
  *             properties:
- *               inicio:
+ *               name:
  *                 type: string
- *               fin:
+ *               email:
  *                 type: string
- *               distanciaKm:
- *                 type: number
- *               velocidadPromedio:
- *                 type: number
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               region:
+ *                 type: string
  *     responses:
  *       201:
- *         description: Movimiento registrado exitosamente
- *       500:
- *         description: Error del servidor
+ *         description: Usuario creado exitosamente
  */
-router.post('/movimientos', authMiddleware, async (req, res) => {
+router.post('/register', async (req, res) => {
   try {
-    const { inicio, fin, distanciaKm, velocidadPromedio } = req.body;
-    const nuevoMovimiento = new Movimiento({ userId: req.userId, inicio, fin, distanciaKm, velocidadPromedio });
-    await nuevoMovimiento.save();
-    res.status(201).json({ message: 'Movimiento registrado exitosamente' });
+    const { name, email, password, role, region } = req.body;
+
+    const existe = await User.findOne({ email });
+    if (existe) return res.status(400).json({ message: 'El usuario ya existe' });
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const nuevoUsuario = new User({ name, email, password: hashed, role, region });
+    await nuevoUsuario.save();
+
+    res.status(201).json({ message: 'Usuario registrado correctamente' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error al registrar el movimiento' });
+    console.error('Error al registrar usuario:', error);
+    res.status(500).json({ message: 'Error al registrar usuario' });
   }
 });
 
 /**
  * @swagger
- * /users/movimientos:
- *   get:
- *     summary: Obtener el historial de movimientos del usuario autenticado
- *     tags: [Movimientos]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lista de movimientos
- *       500:
- *         description: Error al obtener movimientos
- */
-router.get('/movimientos', authMiddleware, async (req, res) => {
-  try {
-    const movimientos = await Movimiento.find({ userId: req.userId }).sort({ createdAt: -1 });
-    res.json(movimientos);
-  } catch (error) {
-    console.error('Error al obtener movimientos:', error);
-    res.status(500).json({ message: 'Error al obtener los movimientos' });
-  }
-});
-
-/**
- * @swagger
- * /users/movimientos/update:
+ * /users/login:
  *   post:
- *     summary: Actualizar un movimiento en curso (agregar posición)
- *     tags: [Movimientos]
- *     security:
- *       - bearerAuth: []
+ *     summary: Iniciar sesión
+ *     tags: [Usuarios]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Movimiento actualizado
- *       400:
- *         description: Faltan datos
- *       404:
- *         description: No hay movimiento en curso
+ *         description: Login exitoso, retorna token
  */
-router.post('/movimientos/update', authMiddleware, async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
-    const { velocidad, ubicacion } = req.body;
-    if (velocidad === undefined || !ubicacion || ubicacion.lat === undefined || ubicacion.lng === undefined) {
-      return res.status(400).json({ message: 'Faltan datos del movimiento' });
-    }
-    const movimiento = await Movimiento.findOne({ userId: req.userId, estado: 'en curso' });
-    if (!movimiento) {
-      return res.status(404).json({ message: 'No hay movimiento en curso' });
-    }
-    movimiento.movimientos.push({ timestamp: new Date(), velocidad, ubicacion });
-    const ahora = new Date();
-    const hace5Min = new Date(ahora.getTime() - 5 * 60 * 1000);
-    const ultimos5min = movimiento.movimientos.filter(m => m.timestamp >= hace5Min);
-    const todosQuietos = ultimos5min.length > 0 && ultimos5min.every(m => m.velocidad <= 1);
-    const esDespuesDe7pm = ahora.getHours() >= 19;
-    if (todosQuietos || esDespuesDe7pm) {
-      movimiento.estado = 'finalizado';
-      movimiento.fin = ahora;
-    }
-    await movimiento.save();
-    res.json({
-      message: todosQuietos || esDespuesDe7pm ? 'Movimiento actualizado y finalizado automáticamente' : 'Movimiento actualizado',
-      estado: movimiento.estado
-    });
+    const { email, password } = req.body;
+
+    const usuario = await User.findOne({ email });
+    if (!usuario) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const esValido = await bcrypt.compare(password, usuario.password);
+    if (!esValido) return res.status(401).json({ message: 'Credenciales inválidas' });
+
+    const token = jwt.sign(
+      { userId: usuario._id, role: usuario.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    res.json({ token, user: { id: usuario._id, name: usuario.name, email: usuario.email, role: usuario.role } });
   } catch (error) {
-    console.error('Error al actualizar movimiento:', error);
-    res.status(500).json({ message: 'Error al actualizar movimiento' });
+    console.error('Error al iniciar sesión:', error);
+    res.status(500).json({ message: 'Error al iniciar sesión' });
   }
 });
 
-/**
- * @swagger
- * /users/movimientos/finalizar:
- *   post:
- *     summary: Finalizar manualmente un movimiento en curso
- *     tags: [Movimientos]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Movimiento finalizado correctamente
- *       404:
- *         description: No hay movimiento en curso
- */
-router.post('/movimientos/finalizar', authMiddleware, async (req, res) => {
-  try {
-    const movimiento = await Movimiento.findOne({ userId: req.userId, estado: 'en curso' });
-    if (!movimiento) {
-      return res.status(404).json({ message: 'No hay movimiento en curso para finalizar' });
-    }
-    movimiento.estado = 'finalizado';
-    movimiento.fin = new Date();
-    await movimiento.save();
-    res.json({ message: 'Movimiento finalizado manualmente', movimiento });
-  } catch (error) {
-    console.error('Error al finalizar movimiento:', error);
-    res.status(500).json({ message: 'Error al finalizar movimiento' });
-  }
-});
+// ==================== ADMIN: GESTIÓN USUARIOS ====================
 
 /**
  * @swagger
- * /users/resumen:
+ * /users:
  *   get:
- *     summary: Obtener resumen de jornadas por fecha o región (admin)
- *     tags: [Movimientos]
+ *     summary: Obtener todos los usuarios (solo admin)
+ *     tags: [Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de usuarios
+ */
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    if (req.userRole !== 'admin') return res.status(403).json({ message: 'Acceso denegado' });
+
+    const usuarios = await User.find().select('-password');
+    res.json(usuarios);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener usuarios' });
+  }
+});
+
+/**
+ * @swagger
+ * /users/{id}:
+ *   put:
+ *     summary: Editar usuario por ID (solo admin)
+ *     tags: [Usuarios]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: query
- *         name: region
+ *       - in: path
+ *         name: id
+ *         required: true
  *         schema:
- *           type: string
- *       - in: query
- *         name: fecha
- *         schema:
- *           type: string
- *       - in: query
- *         name: excel
- *         schema:
- *           type: boolean
- *     responses:
- *       200:
- *         description: Resumen generado
- *       403:
- *         description: Acceso denegado
- */
-router.get('/resumen', authMiddleware, async (req, res) => {
-  try {
-    const userRole = req.userRole;
-    if (userRole !== 'admin') {
-      return res.status(403).json({ message: 'Acceso denegado: solo admin' });
-    }
-    const { region, fecha, excel } = req.query;
-    let filtro = {};
-    if (fecha) {
-      const inicioDia = new Date(fecha + 'T00:00:00');
-      const finDia = new Date(fecha + 'T23:59:59');
-      filtro.createdAt = { $gte: inicioDia, $lte: finDia };
-    }
-    if (region) {
-      const usuarios = await User.find({ region });
-      const userIds = usuarios.map(u => u._id);
-      filtro.userId = { $in: userIds };
-    }
-    const movimientos = await Movimiento.find(filtro).populate('userId', 'name email region role');
-    const resumen = movimientos.map(mov => ({
-      nombre: mov.userId.name,
-      email: mov.userId.email,
-      role: mov.userId.role,
-      region: mov.userId.region,
-      fecha: mov.createdAt.toISOString().split('T')[0],
-      distanciaKm: mov.distanciaKm,
-      velocidadPromedio: mov.velocidadPromedio,
-      estado: mov.estado
-    }));
-    if (excel === 'true') {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Resumen de Jornadas');
-      worksheet.columns = [
-        { header: 'Nombre', key: 'nombre', width: 25 },
-        { header: 'Email', key: 'email', width: 30 },
-        { header: 'Rol', key: 'role', width: 15 },
-        { header: 'Región', key: 'region', width: 15 },
-        { header: 'Fecha', key: 'fecha', width: 15 },
-        { header: 'Distancia (km)', key: 'distanciaKm', width: 18 },
-        { header: 'Velocidad Promedio', key: 'velocidadPromedio', width: 20 },
-        { header: 'Estado', key: 'estado', width: 15 }
-      ];
-      worksheet.addRows(resumen);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=resumen_jornadas.xlsx');
-      await workbook.xlsx.write(res);
-      return res.end();
-    }
-    res.json({ filtrosAplicados: { region, fecha }, total: resumen.length, resumen });
-  } catch (error) {
-    console.error('Error en resumen:', error);
-    res.status(500).json({ message: 'Error al obtener resumen' });
-  }
-});
-
-/**
- * @swagger
- * /users/token:
- *   post:
- *     summary: Guardar token push del usuario autenticado
- *     tags: [Notificaciones]
- *     security:
- *       - bearerAuth: []
+ *           type: string 
  *     requestBody:
  *       required: true
  *       content:
@@ -245,28 +154,55 @@ router.get('/resumen', authMiddleware, async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               pushToken:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               region:
  *                 type: string
  *     responses:
  *       200:
- *         description: Token guardado correctamente
- *       400:
- *         description: Token no proporcionado
- *       404:
- *         description: Usuario no encontrado
+ *         description: Usuario actualizado
  */
-router.post('/token', authMiddleware, async (req, res) => {
+router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { pushToken } = req.body;
-    if (!pushToken) return res.status(400).json({ message: 'El pushToken es requerido' });
-    const user = await User.findById(req.userId);
-    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-    user.pushToken = pushToken;
-    await user.save();
-    res.json({ message: 'Token de notificación guardado correctamente ✅' });
+    if (req.userRole !== 'admin') return res.status(403).json({ message: 'Acceso denegado' });
+
+    const actualizado = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json({ message: 'Usuario actualizado', actualizado });
   } catch (error) {
-    console.error('Error al guardar token push:', error);
-    res.status(500).json({ message: 'Error al guardar el token' });
+    res.status(500).json({ message: 'Error al actualizar usuario' });
+  }
+});
+
+/**
+ * @swagger
+ * /users/{id}:
+ *   delete:
+ *     summary: Eliminar usuario por ID (solo admin)
+ *     tags: [Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Usuario eliminado
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    if (req.userRole !== 'admin') return res.status(403).json({ message: 'Acceso denegado' });
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Usuario eliminado' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar usuario' });
   }
 });
 
