@@ -51,11 +51,12 @@ app.use(limiter);
 app.get('/', (req, res) => res.send('API de Supervitec funcionando ✅'));
 app.get('/api', (req, res) => res.send('API de Supervitec funcionando ✅'));
 
-app.use('/api/auth', authRoutes);
+
 app.use('/api/users', userRoutes);
 app.use('/api/movimientos', movimientoRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/auth', authRoutes);
 
 // ───── Documentación Swagger ─────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -1,10 +1,11 @@
-// routes/movimiento.js
 const express = require('express');
 const router = express.Router();
 const Movimiento = require('../models/movimiento');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
 const ExcelJS = require('exceljs');
+const soloAdmin = require('../middleware/soloAdmin');
+
 
 /**
  * @swagger
@@ -12,6 +13,189 @@ const ExcelJS = require('exceljs');
  *   name: Movimientos
  *   description: Gestión de movimientos (usuarios y admin)
  */
+
+router.post('/iniciar', authMiddleware, async (req, res) => {
+  try {
+    const jornadaActiva = await Movimiento.findOne({ userId: req.usuario._id, estado: 'activa' });
+
+    if (jornadaActiva) {
+      return res.status(400).json({ message: 'Ya tienes una jornada activa' });
+    }
+
+    const nueva = new Movimiento({
+      userId: req.usuario._id,
+      inicio: new Date(),
+      estado: 'activa',
+      movimientos: [],
+    });
+
+    await nueva.save();
+    res.status(201).json({ message: 'Jornada iniciada ✅', movimiento: nueva });
+  } catch (error) {
+    console.error('Error al iniciar jornada:', error);
+    res.status(500).json({ message: 'Error al iniciar jornada' });
+  }
+});
+
+router.post('/agregar', authMiddleware, async (req, res) => {
+  const { lat, lng, velocidad } = req.body;
+
+  if (!lat || !lng || typeof velocidad === 'undefined') {
+    return res.status(400).json({ message: 'Datos incompletos: lat, lng y velocidad son obligatorios' });
+  }
+
+  try {
+    const jornada = await Movimiento.findOne({ userId: req.usuario._id, estado: 'activa' });
+
+    if (!jornada) {
+      return res.status(404).json({ message: 'No tienes una jornada activa actualmente' });
+    }
+
+    const nuevoMovimiento = {
+      timestamp: new Date(),
+      lat,
+      lng,
+      velocidad,
+    };
+
+    jornada.movimientos.push(nuevoMovimiento);
+    await jornada.save();
+
+    res.status(200).json({ message: 'Movimiento registrado ✅', movimiento: nuevoMovimiento });
+  } catch (error) {
+    console.error('Error al agregar movimiento:', error);
+    res.status(500).json({ message: 'Error al registrar el movimiento' });
+  }
+});
+
+router.delete('/movimientos/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const eliminado = await Movimiento.findByIdAndDelete(req.params.id);
+    if (!eliminado) return res.status(404).json({ message: 'Movimiento no encontrado' });
+    res.json({ message: 'Movimiento eliminado correctamente' });
+  } catch (err) {
+    console.error('Error al eliminar movimiento:', err);
+    res.status(500).json({ message: 'Error al eliminar movimiento' });
+  }
+});
+
+
+router.post('/finalizar', authMiddleware, async (req, res) => {
+  try {
+    const jornada = await Movimiento.findOne({ userId: req.usuario._id, estado: 'activa' });
+
+    if (!jornada) {
+      return res.status(404).json({ message: 'No hay jornada activa para finalizar' });
+    }
+
+    const ahora = new Date();
+    jornada.fin = ahora;
+    jornada.estado = 'finalizada';
+
+    // Cálculo de distancia total y velocidades
+    let distanciaTotal = 0;
+    let sumaVelocidades = 0;
+    let maximaVelocidad = 0;
+
+    const movimientos = jornada.movimientos;
+
+    for (let i = 0; i < movimientos.length - 1; i++) {
+      const a = movimientos[i];
+      const b = movimientos[i + 1];
+
+      const rad = x => (x * Math.PI) / 180;
+      const R = 6371; // radio de la Tierra en km
+      const dLat = rad(b.lat - a.lat);
+      const dLon = rad(b.lng - a.lng);
+      const lat1 = rad(a.lat);
+      const lat2 = rad(b.lat);
+
+      const aCalc = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(aCalc), Math.sqrt(1 - aCalc));
+      const d = R * c;
+
+      distanciaTotal += d;
+    }
+
+    movimientos.forEach(m => {
+      sumaVelocidades += m.velocidad;
+      if (m.velocidad > maximaVelocidad) {
+        maximaVelocidad = m.velocidad;
+      }
+    });
+
+    jornada.distanciaKm = distanciaTotal.toFixed(2);
+    jornada.velocidadPromedio = movimientos.length ? (sumaVelocidades / movimientos.length).toFixed(2) : 0;
+    jornada.velocidadMaxima = maximaVelocidad;
+
+    await jornada.save();
+
+    res.status(200).json({
+      message: 'Jornada finalizada correctamente ✅',
+      resumen: {
+        duracionHoras: ((jornada.fin - jornada.inicio) / (1000 * 60 * 60)).toFixed(2),
+        distanciaKm: jornada.distanciaKm,
+        velocidadPromedio: jornada.velocidadPromedio,
+        velocidadMaxima: jornada.velocidadMaxima
+      }
+    });
+  } catch (error) {
+    console.error('Error al finalizar jornada:', error);
+    res.status(500).json({ message: 'Error al finalizar la jornada' });
+  }
+});
+
+router.get('/mis', authMiddleware, async (req, res) => {
+  try {
+    const jornadas = await Movimiento.find({ userId: req.usuario._id }).sort({ inicio: -1 });
+    
+    res.status(200).json({
+      total: jornadas.length,
+      jornadas,
+    });
+  } catch (error) {
+    console.error('Error al obtener mis jornadas:', error);
+    res.status(500).json({ message: 'Error al obtener los movimientos del usuario' });
+  }
+});
+
+// GET /api/movimientos/historial
+router.get('/historial', authMiddleware, async (req, res) => {
+  const { fecha, region, role } = req.query;
+
+  if (!fecha) {
+    return res.status(400).json({ message: 'Debe proporcionar una fecha en formato YYYY-MM-DD' });
+  }
+
+  try {
+    const fechaInicio = new Date(`${fecha}T00:00:00.000Z`);
+    const fechaFin = new Date(`${fecha}T23:59:59.999Z`);
+
+    let userIds = [req.usuario._id]; // Por defecto solo el usuario autenticado
+
+    // Si el usuario es admin, puede filtrar otros
+    if (req.usuario.role === 'admin') {
+      const filtros = {};
+
+      if (region) filtros.region = region;
+      if (role) filtros.role = role;
+
+      const usuarios = await User.find(filtros).select('_id');
+      userIds = usuarios.map(u => u._id);
+    }
+
+    const historial = await Movimiento.find({
+      userId: { $in: userIds },
+      createdAt: { $gte: fechaInicio, $lte: fechaFin }
+    }).sort({ createdAt: 1 });
+
+    res.json({ historial });
+  } catch (error) {
+    console.error('❌ Error al consultar historial:', error);
+    res.status(500).json({ message: 'Error al consultar el historial' });
+  }
+});
+
 
 /**
  * @swagger
@@ -280,5 +464,60 @@ router.get('/resumen', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Error al generar resumen' });
   }
 });
+
+router.get('/resumen', authMiddleware, async (req, res) => {
+  const { fecha, region, role } = req.query;
+
+  if (!fecha) {
+    return res.status(400).json({ message: 'La fecha es requerida en formato YYYY-MM-DD' });
+  }
+
+  try {
+    const fechaInicio = new Date(`${fecha}T00:00:00.000Z`);
+    const fechaFin = new Date(`${fecha}T23:59:59.999Z`);
+
+    let filtrosUsuarios = {};
+    if (req.usuario.role === 'admin') {
+      if (region) filtrosUsuarios.region = region;
+      if (role) filtrosUsuarios.role = role;
+    } else {
+      filtrosUsuarios._id = req.usuario._id;
+    }
+
+    const usuarios = await User.find(filtrosUsuarios).select('_id name email role region');
+
+    const resumen = [];
+
+    for (const usuario of usuarios) {
+      const movimientos = await Movimiento.find({
+        userId: usuario._id,
+        createdAt: { $gte: fechaInicio, $lte: fechaFin }
+      }).sort({ createdAt: 1 });
+
+      if (movimientos.length === 0) continue;
+
+      const totalDistancia = movimientos.reduce((acc, m) => acc + (m.distanciaKm || 0), 0);
+      const promedioVelocidad = movimientos.reduce((acc, m) => acc + (m.velocidadPromedio || 0), 0) / movimientos.length;
+
+      resumen.push({
+        nombre: usuario.name,
+        email: usuario.email,
+        rol: usuario.role,
+        region: usuario.region,
+        cantidadMovimientos: movimientos.length,
+        horaInicio: movimientos[0].createdAt,
+        horaFin: movimientos[movimientos.length - 1].createdAt,
+        distanciaTotalKm: totalDistancia.toFixed(2),
+        velocidadPromedioKmH: promedioVelocidad.toFixed(2),
+      });
+    }
+
+    res.json({ fecha, filtros: { region, role }, resumen });
+  } catch (error) {
+    console.error('❌ Error al generar resumen:', error);
+    res.status(500).json({ message: 'Error al generar el resumen' });
+  }
+});
+
 
 module.exports = router;

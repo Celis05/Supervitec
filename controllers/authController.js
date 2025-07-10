@@ -5,8 +5,7 @@ const Movimiento = require('../models/movimiento');
 
 // Registro
 const register = async (req, res) => {
-  console.log("Datos recibidos en el body:", req.body); // 👈 Agregado
-
+  console.log("Datos recibidos en el body:", req.body); 
   const { name, email, password, role, transporte, region } = req.body;
 
   // 🚫 Bloquear intento de crear usuario con rol admin desde la app
@@ -41,7 +40,7 @@ const register = async (req, res) => {
   }
 };
 
-// Login (igual al que ya tenías)
+// Login 
 const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -66,7 +65,7 @@ const login = async (req, res) => {
       }
     });
   } catch (error) {
-  console.error('Error en el registro:', error.message);  // 👈 este es importante
+  console.error('Error en el registro:', error.message); 
   res.status(500).json({ message: 'Error al registrar el usuario' });
 } 
 };

@@ -1,26 +1,32 @@
 const cron = require('node-cron');
-const axios = require('axios');
-const User = require('../models/User'); // o tu modelo donde guardas tokens
-const NotificacionExpo = require('../utils/notificaciones'); //archivo que envia notificación
+const User = require('../models/User');
+const NotificacionExpo = require('../utils/notificaciones');
 
-// Ejecutar todos los días a las 7:00 a.m.
+// Ejecutar a las 7:00 a.m. todos los días (hora de Bogotá)
 cron.schedule('0 7 * * *', async () => {
   try {
+    console.log('📢 Enviando notificaciones de las 7:00 a.m. a usuarios...');
+
+    // Filtrar usuarios que sean ingenieros o inspectores
     const usuarios = await User.find({ role: { $in: ['ingeniero', 'inspector'] } });
 
     for (const user of usuarios) {
-      if (user.pushToken) {
+      if (user.pushToken && user.pushToken.startsWith('ExponentPushToken')) {
         await NotificacionExpo.enviarNotificacion({
           to: user.pushToken,
           title: 'Inicio de jornada',
           body: '¿Deseas comenzar tu jornada laboral?',
           data: { tipo: 'inicio_jornada' }
         });
+      } else {
+        console.log(`ℹ️ Usuario ${user.email} no tiene un pushToken válido`);
       }
     }
 
-    console.log('✅ Notificaciones de las 7:00 a.m. enviadas');
+    console.log('✅ Notificaciones de las 7:00 a.m. enviadas correctamente');
   } catch (error) {
     console.error('❌ Error al enviar notificaciones:', error.message);
   }
+}, {
+  timezone: 'America/Bogota'
 });

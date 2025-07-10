@@ -4,8 +4,12 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const authMiddleware = require('../middleware/authMiddleware');
 const { registerUser, loginUser }= require('../controllers/authController');
 const Movimiento = require('../models/movimiento');
+
+
+
 
 /**
  * @swagger
@@ -45,6 +49,8 @@ const Movimiento = require('../models/movimiento');
  *         description: Error en los datos de entrada
  */
 
+
+
 router.post(
   '/register',
   [
@@ -76,6 +82,18 @@ router.post(
     }
   }
 );
+
+
+// Ruta protegida para obtener el usuario autenticado
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    res.json({ usuario: req.usuario });
+  } catch (error) {
+    console.error('Error al devolver usuario:', error.message);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+});
+
 
 /**
  * @swagger

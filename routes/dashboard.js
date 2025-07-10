@@ -1,4 +1,3 @@
-// routes/dashboard.js
 const express = require('express');
 const router = express.Router();
 const Movimiento = require('../models/movimiento');

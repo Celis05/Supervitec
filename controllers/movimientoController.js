@@ -6,12 +6,12 @@ const iniciarJornadaSiAplica = async (req, res) => {
   try {
     const { velocidad, ubicacion } = req.body;
     if (velocidad <= 10) {
-      return res.status(400).json({ mensaje: 'La velocidad no es suficiente para iniciar jornada.' });
+      return res.status(400).json({ mensaje: 'Esperando a qué empieces' });
     }
 
     const yaActiva = await Movimiento.findOne({ userId: req.userId, estado: 'activa' });
     if (yaActiva) {
-      return res.status(200).json({ mensaje: 'Ya tienes una jornada activa.' });
+      return res.status(200).json({ mensaje: 'Has empezado tu jornaada' });
     }
 
     const nueva = new Movimiento({
@@ -31,6 +31,7 @@ const iniciarJornadaSiAplica = async (req, res) => {
 
 // ──────────────── CALCULAR DISTANCIA ENTRE DOS PUNTOS ────────────────
 const calcularDistancia = (lat1, lon1, lat2, lon2) => {
+  const Rm = 3959;
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -38,7 +39,7 @@ const calcularDistancia = (lat1, lon1, lat2, lon2) => {
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
             Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return R * c & Rm * c; 
 };
 
 // ──────────────── REGISTRAR MOVIMIENTO EN CURSO ────────────────
@@ -178,6 +179,7 @@ const finalizarJornadaManual = async (req, res) => {
 
 module.exports = {
   iniciarJornadaSiAplica,
+  calcularDistancia,
   registrarMovimiento,
   guardarPushToken,
   historialMovimientos,

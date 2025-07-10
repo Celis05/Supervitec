@@ -1,4 +1,3 @@
-// config/swagger.js
 const swaggerJsdoc = require('swagger-jsdoc');
 
 const options = {
@@ -20,7 +19,7 @@ const options = {
     },
     security: [{ bearerAuth: [] }],
   },
-  apis: ['./routes/*.js'], // Ajusta si tus rutas están en otra carpeta
+  apis: ['./routes/*.js'], 
 };
 
 const swaggerSpec = swaggerJsdoc(options);
